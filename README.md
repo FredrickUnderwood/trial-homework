@@ -53,7 +53,6 @@ We will provide a GitHub repository containing a **Mini Ads Bidding Server** tha
 
 * `POST /v1/bid`
 * `POST /v1/billing`
-* `GET /healthz`
 
 The repo already includes:
 
