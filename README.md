@@ -1,12 +1,3 @@
-Great — adding the “minimum bidding server repo already exists” constraint is perfect, and it *still* keeps the homework “testing the candidate” because now they must design a **data generation strategy + pipeline + dashboard** around a fixed serving surface.
-
-Below is the updated homework doc (only the parts that change + the final integrated wording). The key change is:
-
-* **Deliverable A must be achieved by calling the provided bidding server over HTTP** (they can’t just directly write to Redpanda or bypass the server).
-* We still avoid telling them *how* to generate calls or what corner cases to include.
-
----
-
 # Take-Home Assignment (16h)
 
 ## Zarli — Event Pipeline + Metrics Dashboard (GCP VM)
