@@ -47,7 +47,7 @@ We will reply with the exact SSH command.
 
 ---
 
-## Provided Starter Repo: Mini Ads Bidding Server (Required)
+## Provided Starter Repo: Mini Ads Bidding Server 
 
 We will provide a GitHub repository containing a **Mini Ads Bidding Server** that runs via docker compose and exposes:
 
