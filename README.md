@@ -22,7 +22,8 @@ The goal is to assess your ability to design and deliver an end-to-end, producti
 
 ## Time, Submission
 
-* **Timebox:** up to **16 hours** (across **4 calendar days assuming part-time**)
+* **Timebox:** up to **16 hours** (across **3 calendar days assuming part-time**)
+* **Payment:** ¥1,000 (paid if deliverables meet the acceptance criteria)
 * **Submission:**
 
   * GitHub repo link (all code/scripts/config + README)
