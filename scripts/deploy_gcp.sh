@@ -43,8 +43,8 @@ echo "=================================================="
 gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --project=$PROJECT_ID --command="
     sudo apt-get update &&
     sudo apt-get install -y git docker.io docker-compose &&
-    git clone $REPO_URL bidsrv &&
-    cd bidsrv &&
+    git clone $REPO_URL zarli-trial-hw &&
+    cd zarli-trial-hw &&
     sudo systemctl start docker &&
     sudo docker-compose up -d --build
 "
