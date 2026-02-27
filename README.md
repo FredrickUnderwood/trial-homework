@@ -44,11 +44,6 @@ cat ~/.ssh/zarli_trial_homework_access.pub
 Email the raw `.pub` content to **[founders@zarli.ai](mailto:founders@zarli.ai)**.
 We will reply with the exact SSH command.
 
-**Networking constraints**
-
-* Only **TCP 8080** will be accessible from the public internet.
-* Your solution must not require exposing additional ports publicly.
-
 ---
 
 ## Provided Starter Repo: Mini Ads Bidding Server (Required)
