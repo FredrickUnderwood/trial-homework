@@ -29,5 +29,11 @@ func (m *Manager) SelectCampaign(userIDFV string) *Campaign {
 			CreativeURL: "https://example.com/creative/campaign2.png",
 		}
 	}
-	return nil
+	if userIDFV == "789" {
+		return nil
+	}
+	return &Campaign{
+		ID:          "campaign_default",
+		CreativeURL: "https://example.com/creative/campaign_default.png",
+	}
 }
