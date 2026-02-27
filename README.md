@@ -134,7 +134,7 @@ Acceptance:
 
 The dashboard must be accessible at:
 
-* `http://<VM_EXTERNAL_IP>:8081`
+* `http://<VM_EXTERNAL_IP>:8082`
 
 ### Required Metric Definition
 
