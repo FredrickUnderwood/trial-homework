@@ -11,7 +11,7 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the application
+# Build the server application (includes consumer logic in same process)
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bidsrv ./cmd/server
 
 # Final stage
@@ -19,7 +19,7 @@ FROM alpine:latest
 
 WORKDIR /
 
-# Copy the Pre-built binary file from the previous stage
+# Copy the pre-built server binary
 COPY --from=builder /bidsrv /bidsrv
 
 # Expose port 8080 to the outside world

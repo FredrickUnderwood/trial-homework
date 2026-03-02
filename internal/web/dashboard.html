@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ad Server Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f3f4f6;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .metric-label {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Ad Server Dashboard</h1>
+            <p class="mt-2 text-gray-600">Real-time bid and impression metrics</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-6">
+            <form hx-get="/dashboard" hx-target="#metrics-content" hx-trigger="change" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Campaign ID</label>
+                    <input type="text" name="campaign_id" id="campaign_id"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">App Bundle</label>
+                    <input type="text" name="app_bundle" id="app_bundle"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Placement ID</label>
+                    <input type="text" name="placement_id" id="placement_id"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Time Range</label>
+                    <select name="time_range" id="time_range" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        onchange="updateTimeRange()">
+                        <option value="1h">Last Hour</option>
+                        <option value="3h">Last 3 Hours</option>
+                        <option value="6h">Last 6 Hours</option>
+                        <option value="24h">Last 24 Hours</option>
+                        <option value="7d">Last 7 Days</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div id="custom-time" class="hidden md:col-span-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                        <input type="datetime-local" name="start_time" id="start_time"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                        <input type="datetime-local" name="end_time" id="end_time"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                <div class="md:col-span-4 flex gap-2">
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        Apply Filters
+                    </button>
+                    <button type="button" onclick="refreshData()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">
+                        Refresh
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Metrics Cards -->
+        <div id="metrics-content" class="mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="card">
+                    <div class="metric-value" id="bid-count">-</div>
+                    <div class="metric-label">Total Bids</div>
+                </div>
+                <div class="card">
+                    <div class="metric-value" id="impression-count">-</div>
+                    <div class="metric-label">Total Impressions</div>
+                </div>
+                <div class="card">
+                    <div class="metric-value" id="view-rate">-</div>
+                    <div class="metric-label">View Rate</div>
+                </div>
+            </div>
+            <div class="mt-2 text-sm text-gray-500" id="data-source"></div>
+        </div>
+
+        <!-- Time Series Chart -->
+        <div class="card">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">Metrics Over Time</h2>
+            <canvas id="metricsChart" height="100"></canvas>
+        </div>
+
+        <!-- Auto-refresh indicator -->
+        <div class="mt-4 text-center text-sm text-gray-500">
+            <span id="last-updated"></span>
+            <span class="ml-2">Auto-refreshing every 30 seconds</span>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+        let autoRefreshInterval = null;
+
+        function updateTimeRange() {
+            const select = document.getElementById('time_range');
+            const customTime = document.getElementById('custom-time');
+            
+            if (select.value === 'custom') {
+                customTime.classList.remove('hidden');
+            } else {
+                customTime.classList.add('hidden');
+            }
+        }
+
+        function getTimeParams() {
+            const select = document.getElementById('time_range');
+            const now = new Date();
+            let startTime;
+
+            switch (select.value) {
+                case '1h':
+                    startTime = new Date(now.getTime() - 60 * 60 * 1000);
+                    break;
+                case '3h':
+                    startTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+                    break;
+                case '6h':
+                    startTime = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+                    break;
+                case '24h':
+                    startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    break;
+                case '7d':
+                    startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    break;
+                case 'custom':
+                    const startInput = document.getElementById('start_time').value;
+                    const endInput = document.getElementById('end_time').value;
+                    if (startInput && endInput) {
+                        return {
+                            start_time: new Date(startInput).getTime() / 1000,
+                            end_time: new Date(endInput).getTime() / 1000
+                        };
+                    }
+                    return {};
+                default:
+                    startTime = new Date(now.getTime() - 60 * 60 * 1000);
+            }
+
+            return {
+                start_time: Math.floor(startTime.getTime() / 1000),
+                end_time: Math.floor(now.getTime() / 1000)
+            };
+        }
+
+        async function fetchMetrics() {
+            const params = new URLSearchParams();
+            
+            const campaignId = document.getElementById('campaign_id').value;
+            const appBundle = document.getElementById('app_bundle').value;
+            const placementId = document.getElementById('placement_id').value;
+            const timeParams = getTimeParams();
+
+            if (campaignId) params.append('campaign_id', campaignId);
+            if (appBundle) params.append('app_bundle', appBundle);
+            if (placementId) params.append('placement_id', placementId);
+            if (timeParams.start_time) params.append('start_time', timeParams.start_time);
+            if (timeParams.end_time) params.append('end_time', timeParams.end_time);
+
+            try {
+                // Fetch aggregated metrics
+                const response = await fetch(`/dashboard?${params.toString()}`);
+                const data = await response.json();
+
+                document.getElementById('bid-count').textContent = data.bid_count?.toLocaleString() || '0';
+                document.getElementById('impression-count').textContent = data.impression_count?.toLocaleString() || '0';
+                document.getElementById('view-rate').textContent = data.view_rate ? (data.view_rate * 100).toFixed(2) + '%' : '0%';
+                document.getElementById('data-source').textContent = 'Data source: ' + (data.source || 'unknown');
+
+                // Fetch time series data
+                const tsResponse = await fetch(`/dashboard/timeseries?${params.toString()}`);
+                const tsData = await tsResponse.json();
+
+                updateChart(tsData);
+                document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Error fetching metrics:', error);
+            }
+        }
+
+        function updateChart(data) {
+            const ctx = document.getElementById('metricsChart').getContext('2d');
+            
+            const labels = data.map(d => new Date(d.start_time * 1000).toLocaleTimeString());
+            const bidCounts = data.map(d => d.bid_count);
+            const impressionCounts = data.map(d => d.impression_count);
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Bids',
+                            data: bidCounts,
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Impressions',
+                            data: impressionCounts,
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        function refreshData() {
+            fetchMetrics();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchMetrics();
+            
+            // Auto-refresh every 30 seconds
+            autoRefreshInterval = setInterval(fetchMetrics, 30000);
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        });
+    </script>
+</body>
+</html>

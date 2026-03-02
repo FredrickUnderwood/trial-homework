@@ -12,21 +12,24 @@ import (
 	"bidsrv/internal/campaign"
 	"bidsrv/internal/event"
 	"bidsrv/internal/idempotency"
+	"bidsrv/internal/storage/infra_redis"
 )
 
 // Handler holds dependencies for the HTTP handlers
 type Handler struct {
 	campaignMgr *campaign.Manager
 	store       *idempotency.Store
+	bidCache    *infra_redis.BidCache
 	producer    *event.Producer
 	baseURL     string
 }
 
 // NewHandler creates a new Handler
-func NewHandler(bm *campaign.Manager, s *idempotency.Store, p *event.Producer, baseURL string) *Handler {
+func NewHandler(bm *campaign.Manager, s *idempotency.Store, bc *infra_redis.BidCache, p *event.Producer, baseURL string) *Handler {
 	return &Handler{
 		campaignMgr: bm,
 		store:       s,
+		bidCache:    bc,
 		producer:    p,
 		baseURL:     baseURL,
 	}
@@ -59,7 +62,19 @@ func (h *Handler) HandleBid(w http.ResponseWriter, r *http.Request) {
 	// 2. Generate bid ID
 	bidID := uuid.New().String()
 
-	// 3. Log to Redpanda
+	// 3. Store bid info in Redis for later retrieval during billing
+	bidInfo := infra_redis.BidInfo{
+		CampaignID:  camp.ID,
+		AppBundle:   req.AppBundle,
+		PlacementID: req.PlacementID,
+		UserIDFV:    req.UserIDFV,
+	}
+	if err := h.bidCache.SetBidInfo(r.Context(), bidID, bidInfo); err != nil {
+		log.Printf("error storing bid info in infra_redis: %v", err)
+		// Continue anyway - don't block the bid response for infra_redis errors
+	}
+
+	// 4. Log to Redpanda
 	bidEvent := event.BidEvent{
 		RequestID:   requestID,
 		BidID:       bidID,
@@ -118,37 +133,22 @@ func (h *Handler) HandleBilling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Log to Redpanda
-	// Note: We don't have campaignID or userIDFV in the billing request in the strict requirements schema.
-	// But the requirements say "Message must include at minimum: bid_id, campaign_id, user_idfv, timestamp"
-	// Let's assume the strict required params might require us to store these in Redis,
-	// OR the requirements imply we expect the client to send them in "other provided fields".
-	// Since Redis SETNX only stored "1", we can either update LockBilling to store JSON, or just read from Request.
-	// Let's update the event to use what we have, and we'll read user_idfv and campaign_id from request if available.
+	// 2. Get bid info from Redis
+	campaignID := ""
+	userIDFV := ""
+	if bidInfo, err := h.bidCache.GetBidInfo(r.Context(), req.BidID); err != nil {
+		log.Printf("error getting bid info from infra_redis: %v", err)
+	} else if bidInfo != nil {
+		campaignID = bidInfo.CampaignID
+		userIDFV = bidInfo.UserIDFV
+	}
 
-	// Let's parse additional fields using a map to extract any other fields if provided.
-	// We can decode body twice? No. Let's create an extended request struct locally or just parse to map first.
-	// For simplicity, let's redefine the BillingRequest locally to capture extra fields if needed.
-	// Actually, the requirements mentioned "Input includes at minimum: bid_id, timestamp, other provided fields (if any)"
-	// To safely log campaign_id and user_idfv, we should really retrieve them from Redis at bid time.
-	// Let me check if we need to refine the store.
-	// For now let's just use what we have in the request as string fields.
-
-	// Actually let's assume the client sends campaign_id and user_idfv because "other provided fields (if any)"
-	// or we just put empty string if not provided. This is a common pattern when client passes back bid_id and nothing else.
-	// Better yet, I will update LockBilling to store the metadata.
-	// I'll leave this as reading from extended request for now.
-
-	// Let's use a custom struct to parse the full body
-
-	// Re-decoding won't work easily unless we use json.RawMessage.
-
-	// Instead, let's just log what we have. It's safe to include standard fields in the struct.
-
+	// 3. Log to Redpanda
 	impressionEvent := event.ImpressionEvent{
-		BidID:     req.BidID,
-		Timestamp: time.Now().Unix(),
-		// CampaignID and UserIDFV will be empty unless we extract them. Let's add them to the BillingRequest struct.
+		BidID:      req.BidID,
+		CampaignID: campaignID,
+		UserIDFV:   userIDFV,
+		Timestamp:  time.Now().Unix(),
 	}
 
 	if err := h.producer.ProduceImpression(r.Context(), impressionEvent); err != nil {
