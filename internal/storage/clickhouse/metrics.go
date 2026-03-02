@@ -31,17 +31,17 @@ type QueryMetrics struct {
 
 // QueryMetrics retrieves historical metrics from ClickHouse
 func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time.Time, campaignID, appBundle, placementID string) ([]QueryMetrics, error) {
-	// Build the query
+	// Build the query (use FINAL to get merged data from SummingMergeTree)
 	query := `
 		SELECT
 			minute,
 			campaign_id,
 			app_bundle,
 			placement_id,
-			sum(bid_count) as bid_count,
-			sum(impression_count) as impression_count,
-			sum(impression_count) / sum(bid_count) as view_rate
-		FROM metrics_minute
+			bid_count,
+			impression_count,
+			if(bid_count > 0, impression_count / bid_count, 0) as view_rate
+		FROM metrics_minute FINAL
 		WHERE minute >= ? AND minute <= ?
 	`
 
@@ -64,7 +64,7 @@ func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time
 		args = append(args, placementID)
 	}
 
-	query += " GROUP BY minute, campaign_id, app_bundle, placement_id ORDER BY minute"
+	query += " ORDER BY minute"
 
 	rows, err := q.conn.Query(ctx, query, args...)
 	if err != nil {
@@ -102,7 +102,10 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 			? as placement_id,
 			sum(bid_count) as bid_count,
 			sum(impression_count) as impression_count,
-			sum(impression_count) / sum(bid_count) as view_rate
+			CASE
+				WHEN sum(bid_count) > 0 THEN sum(impression_count) / sum(bid_count)
+				ELSE 0
+			END as view_rate
 		FROM metrics_minute
 		WHERE minute >= ? AND minute <= ?
 	`

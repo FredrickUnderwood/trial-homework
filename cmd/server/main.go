@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -80,10 +81,41 @@ func main() {
 		log.Fatalf("failed to init metrics query service: %v", err)
 	}
 
-	// 8. Init Dashboard Handler
+	// 8. Start background metrics aggregation thread
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		log.Println("Background metrics aggregation thread started")
+
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				minutes, err := chClient.GetMinutesToAggregate(ctx)
+				if err != nil {
+					log.Printf("Error getting minutes to aggregate: %v", err)
+					cancel()
+					continue
+				}
+
+				if len(minutes) > 0 {
+					log.Printf("Aggregating %d minutes: %v", len(minutes), minutes)
+					for _, minute := range minutes {
+						if err := chClient.AggregateMetrics(ctx, minute); err != nil {
+							log.Printf("Error aggregating metrics for minute %s: %v", minute, err)
+						}
+					}
+				}
+
+				cancel()
+			}
+		}
+	}()
+
+	// 9. Init Dashboard Handler
 	dashboardHandler := api.NewDashboardHandler(queryService)
 
-	// 9. Setup Router
+	// 10. Setup Router
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)

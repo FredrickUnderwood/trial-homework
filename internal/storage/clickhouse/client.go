@@ -151,3 +151,58 @@ func (c *Client) InsertMetrics(ctx context.Context, record MetricsRecord) error 
 
 	return nil
 }
+
+// AggregateMetrics aggregates data from bids and impressions tables into metrics_minute
+func (c *Client) AggregateMetrics(ctx context.Context, minute string) error {
+	query := `
+		INSERT INTO metrics_minute
+		SELECT
+			? as minute,
+			campaign_id,
+			app_bundle,
+			placement_id,
+			count(*) as bid_count,
+			sum(if(i.bid_id IS NOT NULL, 1, 0)) as impression_count,
+			if(count(*) > 0, sum(if(i.bid_id IS NOT NULL, 1, 0)) / count(*), 0) as view_rate
+		FROM bids b
+		LEFT JOIN impressions i ON b.bid_id = i.bid_id
+		WHERE 
+			formatDateTime(toDateTime(b.bid_timestamp), '%%Y%%m%%d%%H%%i') = ?
+		GROUP BY campaign_id, app_bundle, placement_id
+	`
+
+	rows, err := c.conn.Query(ctx, query, minute, minute)
+	if err != nil {
+		return fmt.Errorf("failed to aggregate metrics: %w", err)
+	}
+	defer rows.Close()
+
+	return nil
+}
+
+// GetMinutesToAggregate returns minutes that need to be aggregated
+func (c *Client) GetMinutesToAggregate(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT DISTINCT formatDateTime(toDateTime(bid_timestamp), '%%Y%%m%%d%%H%%i') as minute
+		FROM bids
+		WHERE minute NOT IN (SELECT DISTINCT minute FROM metrics_minute)
+		ORDER BY minute
+	`
+
+	rows, err := c.conn.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get minutes to aggregate: %w", err)
+	}
+	defer rows.Close()
+
+	var minutes []string
+	for rows.Next() {
+		var minute string
+		if err := rows.Scan(&minute); err != nil {
+			return nil, fmt.Errorf("failed to scan minute: %w", err)
+		}
+		minutes = append(minutes, minute)
+	}
+
+	return minutes, nil
+}
