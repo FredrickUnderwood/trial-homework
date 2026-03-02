@@ -39,11 +39,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: infra_redis
+    container_name: redis
     ports:
       - "6379:6379"
     volumes:
-      - infra_redis-data:/data
+      - redis-data:/data
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
