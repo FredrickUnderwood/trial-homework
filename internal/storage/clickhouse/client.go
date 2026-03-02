@@ -14,6 +14,8 @@ type Client struct {
 	conn driver.Conn
 }
 
+var loc, _ = time.LoadLocation("Asia/Shanghai")
+
 // NewClient creates a new ClickHouse client
 func NewClient(addr string) (*Client, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{
@@ -63,6 +65,7 @@ func (c *Client) InsertBid(ctx context.Context, record BidRecord) error {
 		record.AppBundle,
 		record.PlacementID,
 		record.BidTimestamp,
+		time.Now().In(loc),
 	); err != nil {
 		return fmt.Errorf("failed to append to batch: %w", err)
 	}
@@ -100,6 +103,7 @@ func (c *Client) InsertImpression(ctx context.Context, record ImpressionRecord) 
 		record.PlacementID,
 		record.BidTimestamp,
 		record.ImpressionTimestamp,
+		time.Now().In(loc),
 	); err != nil {
 		return fmt.Errorf("failed to append to batch: %w", err)
 	}
