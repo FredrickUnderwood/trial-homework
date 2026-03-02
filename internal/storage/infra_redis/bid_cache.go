@@ -16,10 +16,11 @@ type BidCache struct {
 
 // BidInfo represents the bid information stored in Redis
 type BidInfo struct {
-	CampaignID  string `json:"campaign_id"`
-	AppBundle   string `json:"app_bundle"`
-	PlacementID string `json:"placement_id"`
-	UserIDFV    string `json:"user_idfv"`
+	CampaignID   string `json:"campaign_id"`
+	AppBundle    string `json:"app_bundle"`
+	PlacementID  string `json:"placement_id"`
+	UserIDFV     string `json:"user_idfv"`
+	BidTimestamp int64  `json:"bid_timestamp"`
 }
 
 // NewBidCache creates a new BidCache instance

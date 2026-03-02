@@ -1,6 +1,7 @@
 package event
 
 import (
+	"bidsrv/internal/model"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -51,18 +52,8 @@ func (p *Producer) Close() {
 	p.client.Close()
 }
 
-// BidEvent represents the schema for topic 'bid-requests'
-type BidEvent struct {
-	RequestID   string `json:"request_id"`
-	BidID       string `json:"bid_id"`
-	UserIDFV    string `json:"user_idfv"`
-	CampaignID  string `json:"campaign_id"`
-	PlacementID string `json:"placement_id"`
-	Timestamp   int64  `json:"timestamp"`
-}
-
 // ProduceBid sends a BidEvent to the 'bid-requests' topic
-func (p *Producer) ProduceBid(ctx context.Context, event BidEvent) error {
+func (p *Producer) ProduceBid(ctx context.Context, event model.BidEvent) error {
 	val, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal bid event: %w", err)
@@ -84,16 +75,8 @@ func (p *Producer) ProduceBid(ctx context.Context, event BidEvent) error {
 	return nil
 }
 
-// ImpressionEvent represents the schema for topic 'impressions'
-type ImpressionEvent struct {
-	BidID      string `json:"bid_id"`
-	CampaignID string `json:"campaign_id"`
-	UserIDFV   string `json:"user_idfv"`
-	Timestamp  int64  `json:"timestamp"`
-}
-
 // ProduceImpression sends an ImpressionEvent to the 'impressions' topic
-func (p *Producer) ProduceImpression(ctx context.Context, event ImpressionEvent) error {
+func (p *Producer) ProduceImpression(ctx context.Context, event model.ImpressionEvent) error {
 	val, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal impression event: %w", err)

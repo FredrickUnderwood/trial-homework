@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bidsrv/internal/model"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -63,11 +64,13 @@ func (h *Handler) HandleBid(w http.ResponseWriter, r *http.Request) {
 	bidID := uuid.New().String()
 
 	// 3. Store bid info in Redis for later retrieval during billing
+	bidTimestamp := time.Now().Unix()
 	bidInfo := infra_redis.BidInfo{
-		CampaignID:  camp.ID,
-		AppBundle:   req.AppBundle,
-		PlacementID: req.PlacementID,
-		UserIDFV:    req.UserIDFV,
+		CampaignID:   camp.ID,
+		AppBundle:    req.AppBundle,
+		PlacementID:  req.PlacementID,
+		UserIDFV:     req.UserIDFV,
+		BidTimestamp: bidTimestamp,
 	}
 	if err := h.bidCache.SetBidInfo(r.Context(), bidID, bidInfo); err != nil {
 		log.Printf("error storing bid info in infra_redis: %v", err)
@@ -75,13 +78,14 @@ func (h *Handler) HandleBid(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Log to Redpanda
-	bidEvent := event.BidEvent{
+	bidEvent := model.BidEvent{
 		RequestID:   requestID,
 		BidID:       bidID,
 		UserIDFV:    req.UserIDFV,
 		CampaignID:  camp.ID,
+		AppBundle:   req.AppBundle,
 		PlacementID: req.PlacementID,
-		Timestamp:   time.Now().Unix(),
+		Timestamp:   bidTimestamp,
 	}
 
 	// Using background context because we don't want to fail if the HTTP request is canceled
@@ -133,22 +137,10 @@ func (h *Handler) HandleBilling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Get bid info from Redis
-	campaignID := ""
-	userIDFV := ""
-	if bidInfo, err := h.bidCache.GetBidInfo(r.Context(), req.BidID); err != nil {
-		log.Printf("error getting bid info from infra_redis: %v", err)
-	} else if bidInfo != nil {
-		campaignID = bidInfo.CampaignID
-		userIDFV = bidInfo.UserIDFV
-	}
-
 	// 3. Log to Redpanda
-	impressionEvent := event.ImpressionEvent{
-		BidID:      req.BidID,
-		CampaignID: campaignID,
-		UserIDFV:   userIDFV,
-		Timestamp:  time.Now().Unix(),
+	impressionEvent := model.ImpressionEvent{
+		BidID:     req.BidID,
+		Timestamp: time.Now().Unix(),
 	}
 
 	if err := h.producer.ProduceImpression(r.Context(), impressionEvent); err != nil {

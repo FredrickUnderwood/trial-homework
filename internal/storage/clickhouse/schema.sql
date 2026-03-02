@@ -9,21 +9,21 @@ CREATE TABLE IF NOT EXISTS bidsrv.bids (
     request_id String,
     user_idfv String,
     campaign_id String,
-    app_bundle String
+    app_bundle String,
     placement_id String,
     bid_timestamp Int64,
     created_at DateTime DEFAULT now()
 )
 ENGINE = MergeTree()
 ORDER BY (bid_timestamp)
-PARTITION BY toYYYYMM(bid_timestamp);
+PARTITION BY toYYYYMM(toDateTime(bid_timestamp));
 
 -- Impressions table: stores all impression events (enriched with bid info)
 CREATE TABLE IF NOT EXISTS bidsrv.impressions (
     bid_id String,
     user_idfv String,
     campaign_id String,
-    app_bundle String
+    app_bundle String,
     placement_id String,
     bid_timestamp Int64,
     impression_timestamp Int64,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS bidsrv.impressions (
 )
 ENGINE = MergeTree()
 ORDER BY (impression_timestamp)
-PARTITION BY toYYYYMM(impression_timestamp);
+PARTITION BY toYYYYMM(toDateTime(impression_timestamp));
 
 -- Metrics hourly table: pre-aggregated metrics by hour and placement
 CREATE TABLE IF NOT EXISTS bidsrv.metrics_minute (
@@ -45,4 +45,4 @@ CREATE TABLE IF NOT EXISTS bidsrv.metrics_minute (
 )
 ENGINE = SummingMergeTree()
 ORDER BY (minute, campaign_id, app_bundle, placement_id)
-PARTITION BY toYYYYMM(hour);
+PARTITION BY toYYYYMM(toDate(substring(minute, 1, 8)));

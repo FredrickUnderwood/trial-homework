@@ -1,6 +1,7 @@
 package consumer
 
 import (
+	"bidsrv/internal/model"
 	"context"
 	"encoding/json"
 	"log"
@@ -97,7 +98,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 }
 
 func (c *Consumer) handleBidRequest(record *kgo.Record) error {
-	var event BidEvent
+	var event model.BidEvent
 	if err := json.Unmarshal(record.Value, &event); err != nil {
 		log.Printf("Failed to unmarshal bid event: %v", err)
 		return nil // Don't retry, it's a parse error
@@ -109,7 +110,7 @@ func (c *Consumer) handleBidRequest(record *kgo.Record) error {
 		RequestID:    event.RequestID,
 		UserIDFV:     event.UserIDFV,
 		CampaignID:   event.CampaignID,
-		AppBundle:    "", // Not in bid event
+		AppBundle:    event.AppBundle,
 		PlacementID:  event.PlacementID,
 		BidTimestamp: event.Timestamp,
 	}
@@ -131,7 +132,7 @@ func (c *Consumer) handleBidRequest(record *kgo.Record) error {
 }
 
 func (c *Consumer) handleImpression(record *kgo.Record) error {
-	var event ImpressionEvent
+	var event model.ImpressionEvent
 	if err := json.Unmarshal(record.Value, &event); err != nil {
 		log.Printf("Failed to unmarshal impression event: %v", err)
 		return nil // Don't retry, it's a parse error
@@ -140,22 +141,27 @@ func (c *Consumer) handleImpression(record *kgo.Record) error {
 	// Get bid info from Redis for app_bundle and bid_timestamp
 	var appBundle string
 	var bidTimestamp int64
+	var userIDFV string
+	var campaignId string
+	var placementId string
 
 	if bidInfo, err := c.bidCache.GetBidInfo(context.Background(), event.BidID); err != nil {
 		log.Printf("Failed to get bid info from Redis: %v", err)
 	} else if bidInfo != nil {
 		appBundle = bidInfo.AppBundle
-		// Use current timestamp as approximation if not available
-		bidTimestamp = event.Timestamp - 1 // Assume impression comes shortly after bid
+		bidTimestamp = bidInfo.BidTimestamp
+		userIDFV = bidInfo.UserIDFV
+		campaignId = bidInfo.CampaignID
+		placementId = bidInfo.PlacementID
 	}
 
 	// Store to ClickHouse
 	chRecord := clickhouse.ImpressionRecord{
 		BidID:               event.BidID,
-		UserIDFV:            event.UserIDFV,
-		CampaignID:          event.CampaignID,
+		UserIDFV:            userIDFV,
+		CampaignID:          campaignId,
 		AppBundle:           appBundle,
-		PlacementID:         "", // Not in impression event
+		PlacementID:         placementId, // Not in impression event
 		BidTimestamp:        bidTimestamp,
 		ImpressionTimestamp: event.Timestamp,
 	}
@@ -171,26 +177,8 @@ func (c *Consumer) handleImpression(record *kgo.Record) error {
 	// Update metrics in Redis
 	minute := strconv.FormatInt(event.Timestamp, 10)
 	minute = time.Unix(event.Timestamp, 0).Format("200601021504")
-	c.metrics.IncrementImpressionCount(ctx, minute, event.CampaignID, appBundle, "")
+	c.metrics.IncrementImpressionCount(ctx, minute, campaignId, appBundle, placementId)
 
 	log.Printf("Processed impression: bid_id=%s", event.BidID)
 	return nil
-}
-
-// BidEvent represents a bid event from Kafka
-type BidEvent struct {
-	RequestID   string `json:"request_id"`
-	BidID       string `json:"bid_id"`
-	UserIDFV    string `json:"user_idfv"`
-	CampaignID  string `json:"campaign_id"`
-	PlacementID string `json:"placement_id"`
-	Timestamp   int64  `json:"timestamp"`
-}
-
-// ImpressionEvent represents an impression event from Kafka
-type ImpressionEvent struct {
-	BidID      string `json:"bid_id"`
-	CampaignID string `json:"campaign_id"`
-	UserIDFV   string `json:"user_idfv"`
-	Timestamp  int64  `json:"timestamp"`
 }
