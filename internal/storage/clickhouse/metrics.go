@@ -96,13 +96,13 @@ func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time
 // QueryAggregatedMetrics retrieves aggregated metrics from ClickHouse
 // When no filters are provided, it returns the total aggregated across all data
 func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, endTime time.Time, campaignID, appBundle, placementID string) (*QueryMetrics, error) {
-	// Build the base query
+	// Build the base query with GROUP BY
 	query := `
 		SELECT
-			? as minute,
-			? as campaign_id,
-			? as app_bundle,
-			? as placement_id,
+			'' as minute,
+			campaign_id,
+			app_bundle,
+			placement_id,
 			sum(bid_count) as bid_count,
 			sum(impression_count) as impression_count,
 			CASE
@@ -114,10 +114,6 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 	`
 
 	args := []interface{}{
-		"",      // minute
-		campaignID,
-		appBundle,
-		placementID,
 		startTime.Format("200601021504"),
 		endTime.Format("200601021504"),
 	}
@@ -137,13 +133,20 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 		args = append(args, placementID)
 	}
 
+	// Always GROUP BY all dimensions
+	query += " GROUP BY campaign_id, app_bundle, placement_id"
+
 	rows, err := q.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query aggregated metrics: %w", err)
 	}
 	defer rows.Close()
 
-	if rows.Next() {
+	// Aggregate all results into one
+	var totalBidCount, totalImpressionCount uint64
+	var resultCampaignID, resultAppBundle, resultPlacementID string
+
+	for rows.Next() {
 		var r QueryMetrics
 		if err := rows.Scan(
 			&r.Minute,
@@ -156,8 +159,46 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
-		return &r, nil
+
+		totalBidCount += r.BidCount
+		totalImpressionCount += r.ImpressionCount
+
+		// Keep the first non-empty values for dimensions
+		if resultCampaignID == "" && r.CampaignID != "" {
+			resultCampaignID = r.CampaignID
+		}
+		if resultAppBundle == "" && r.AppBundle != "" {
+			resultAppBundle = r.AppBundle
+		}
+		if resultPlacementID == "" && r.PlacementID != "" {
+			resultPlacementID = r.PlacementID
+		}
 	}
 
-	return nil, nil
+	// If no data found, return empty result
+	if totalBidCount == 0 && totalImpressionCount == 0 {
+		return &QueryMetrics{
+			CampaignID:      campaignID,
+			AppBundle:       appBundle,
+			PlacementID:     placementID,
+			BidCount:        0,
+			ImpressionCount: 0,
+			ViewRate:        0,
+		}, nil
+	}
+
+	viewRate := 0.0
+	if totalBidCount > 0 {
+		viewRate = float64(totalImpressionCount) / float64(totalBidCount)
+	}
+
+	return &QueryMetrics{
+		Minute:          "",
+		CampaignID:      resultCampaignID,
+		AppBundle:       resultAppBundle,
+		PlacementID:     resultPlacementID,
+		BidCount:        totalBidCount,
+		ImpressionCount: totalImpressionCount,
+		ViewRate:        viewRate,
+	}, nil
 }
