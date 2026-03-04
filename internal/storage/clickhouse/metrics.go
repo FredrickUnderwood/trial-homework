@@ -96,19 +96,11 @@ func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time
 // QueryAggregatedMetrics retrieves aggregated metrics from ClickHouse
 // When no filters are provided, it returns the total aggregated across all data
 func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, endTime time.Time, campaignID, appBundle, placementID string) (*QueryMetrics, error) {
-	// Build the base query with GROUP BY
-	query := `
+	// First query: get total bid_count and impression_count using subquery
+	innerQuery := `
 		SELECT
-			'' as minute,
-			campaign_id,
-			app_bundle,
-			placement_id,
-			sum(bid_count) as bid_count,
-			sum(impression_count) as impression_count,
-			CASE
-				WHEN sum(bid_count) > 0 THEN sum(impression_count) / sum(bid_count)
-				ELSE 0
-			END as view_rate
+			sum(bid_count) as total_bid_count,
+			sum(impression_count) as total_impression_count
 		FROM metrics_minute
 		WHERE minute >= ? AND minute <= ?
 	`
@@ -119,34 +111,46 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 	}
 
 	// Add filters only if they are provided (non-empty)
-	// This allows users to optionally filter by any combination of fields
 	if campaignID != "" {
-		query += " AND campaign_id = ?"
+		innerQuery += " AND campaign_id = ?"
 		args = append(args, campaignID)
 	}
 	if appBundle != "" {
-		query += " AND app_bundle = ?"
+		innerQuery += " AND app_bundle = ?"
 		args = append(args, appBundle)
 	}
 	if placementID != "" {
-		query += " AND placement_id = ?"
+		innerQuery += " AND placement_id = ?"
 		args = append(args, placementID)
 	}
 
-	// Always GROUP BY all dimensions
-	query += " GROUP BY campaign_id, app_bundle, placement_id"
+	// Outer query: calculate view_rate
+	query := fmt.Sprintf(`
+		SELECT
+			'' as minute,
+			? as campaign_id,
+			? as app_bundle,
+			? as placement_id,
+			total_bid_count,
+			total_impression_count,
+			if(total_bid_count > 0, total_impression_count / total_bid_count, 0) as view_rate
+		FROM (%s)
+	`, innerQuery)
 
-	rows, err := q.conn.Query(ctx, query, args...)
+	outerArgs := []interface{}{
+		campaignID,
+		appBundle,
+		placementID,
+	}
+	outerArgs = append(outerArgs, args...)
+
+	rows, err := q.conn.Query(ctx, query, outerArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query aggregated metrics: %w", err)
 	}
 	defer rows.Close()
 
-	// Aggregate all results into one
-	var totalBidCount, totalImpressionCount uint64
-	var resultCampaignID, resultAppBundle, resultPlacementID string
-
-	for rows.Next() {
+	if rows.Next() {
 		var r QueryMetrics
 		if err := rows.Scan(
 			&r.Minute,
@@ -159,46 +163,16 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
-
-		totalBidCount += r.BidCount
-		totalImpressionCount += r.ImpressionCount
-
-		// Keep the first non-empty values for dimensions
-		if resultCampaignID == "" && r.CampaignID != "" {
-			resultCampaignID = r.CampaignID
-		}
-		if resultAppBundle == "" && r.AppBundle != "" {
-			resultAppBundle = r.AppBundle
-		}
-		if resultPlacementID == "" && r.PlacementID != "" {
-			resultPlacementID = r.PlacementID
-		}
+		return &r, nil
 	}
 
-	// If no data found, return empty result
-	if totalBidCount == 0 && totalImpressionCount == 0 {
-		return &QueryMetrics{
-			CampaignID:      campaignID,
-			AppBundle:       appBundle,
-			PlacementID:     placementID,
-			BidCount:        0,
-			ImpressionCount: 0,
-			ViewRate:        0,
-		}, nil
-	}
-
-	viewRate := 0.0
-	if totalBidCount > 0 {
-		viewRate = float64(totalImpressionCount) / float64(totalBidCount)
-	}
-
+	// No data found, return empty result
 	return &QueryMetrics{
-		Minute:          "",
-		CampaignID:      resultCampaignID,
-		AppBundle:       resultAppBundle,
-		PlacementID:     resultPlacementID,
-		BidCount:        totalBidCount,
-		ImpressionCount: totalImpressionCount,
-		ViewRate:        viewRate,
+		CampaignID:      campaignID,
+		AppBundle:       appBundle,
+		PlacementID:     placementID,
+		BidCount:        0,
+		ImpressionCount: 0,
+		ViewRate:        0,
 	}, nil
 }
