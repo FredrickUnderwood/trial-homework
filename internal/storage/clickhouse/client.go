@@ -154,10 +154,10 @@ func (c *Client) InsertMetrics(ctx context.Context, record MetricsRecord) error 
 
 // AggregateMetrics aggregates data from bids and impressions tables into metrics_minute
 func (c *Client) AggregateMetrics(ctx context.Context, minute string) error {
-	query := `
+	query := fmt.Sprintf(`
 		INSERT INTO metrics_minute
 		SELECT
-			? as minute,
+			'%s' as minute,
 			campaign_id,
 			app_bundle,
 			placement_id,
@@ -167,15 +167,14 @@ func (c *Client) AggregateMetrics(ctx context.Context, minute string) error {
 		FROM bids b
 		LEFT JOIN impressions i ON b.bid_id = i.bid_id
 		WHERE 
-			formatDateTime(toDateTime(b.bid_timestamp), '%%Y%%m%%d%%H%%i') = ?
+			formatDateTime(toDateTime(b.bid_timestamp), '%%Y%%m%%d%%H%%i') = '%s'
 		GROUP BY campaign_id, app_bundle, placement_id
-	`
+	`, minute, minute)
 
-	rows, err := c.conn.Query(ctx, query, minute, minute)
+	err := c.conn.AsyncInsert(ctx, query, false)
 	if err != nil {
 		return fmt.Errorf("failed to aggregate metrics: %w", err)
 	}
-	defer rows.Close()
 
 	return nil
 }
@@ -183,9 +182,9 @@ func (c *Client) AggregateMetrics(ctx context.Context, minute string) error {
 // GetMinutesToAggregate returns minutes that need to be aggregated
 func (c *Client) GetMinutesToAggregate(ctx context.Context) ([]string, error) {
 	query := `
-		SELECT DISTINCT formatDateTime(toDateTime(bid_timestamp), '%%Y%%m%%d%%H%%i') as minute
+		SELECT DISTINCT formatDateTime(toDateTime(bid_timestamp), '%Y%m%d%H%i') as minute
 		FROM bids
-		WHERE minute NOT IN (SELECT DISTINCT minute FROM metrics_minute)
+		WHERE formatDateTime(toDateTime(bid_timestamp), '%Y%m%d%H%i') NOT IN (SELECT DISTINCT minute FROM metrics_minute)
 		ORDER BY minute
 	`
 

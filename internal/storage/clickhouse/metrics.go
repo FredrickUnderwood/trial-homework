@@ -31,17 +31,17 @@ type QueryMetrics struct {
 
 // QueryMetrics retrieves historical metrics from ClickHouse
 func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time.Time, campaignID, appBundle, placementID string) ([]QueryMetrics, error) {
-	// Build the query (use FINAL to get merged data from SummingMergeTree)
+	// Build the base query
 	query := `
 		SELECT
 			minute,
 			campaign_id,
 			app_bundle,
 			placement_id,
-			bid_count,
-			impression_count,
-			if(bid_count > 0, impression_count / bid_count, 0) as view_rate
-		FROM metrics_minute FINAL
+			sum(bid_count) as bid_count,
+			sum(impression_count) as impression_count,
+			if(sum(bid_count) > 0, sum(impression_count) / sum(bid_count), 0) as view_rate
+		FROM metrics_minute
 		WHERE minute >= ? AND minute <= ?
 	`
 
@@ -50,7 +50,7 @@ func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time
 		endTime.Format("200601021504"),
 	}
 
-	// Add filters
+	// Add filters only if they are provided (non-empty)
 	if campaignID != "" {
 		query += " AND campaign_id = ?"
 		args = append(args, campaignID)
@@ -64,7 +64,8 @@ func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time
 		args = append(args, placementID)
 	}
 
-	query += " ORDER BY minute"
+	// Group by all dimensions
+	query += " GROUP BY minute, campaign_id, app_bundle, placement_id ORDER BY minute"
 
 	rows, err := q.conn.Query(ctx, query, args...)
 	if err != nil {
@@ -93,10 +94,12 @@ func (q *MetricsQuery) QueryMetrics(ctx context.Context, startTime, endTime time
 }
 
 // QueryAggregatedMetrics retrieves aggregated metrics from ClickHouse
+// When no filters are provided, it returns the total aggregated across all data
 func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, endTime time.Time, campaignID, appBundle, placementID string) (*QueryMetrics, error) {
+	// Build the base query
 	query := `
 		SELECT
-			'' as minute,
+			? as minute,
 			? as campaign_id,
 			? as app_bundle,
 			? as placement_id,
@@ -111,11 +114,27 @@ func (q *MetricsQuery) QueryAggregatedMetrics(ctx context.Context, startTime, en
 	`
 
 	args := []interface{}{
+		"",      // minute
 		campaignID,
 		appBundle,
 		placementID,
 		startTime.Format("200601021504"),
 		endTime.Format("200601021504"),
+	}
+
+	// Add filters only if they are provided (non-empty)
+	// This allows users to optionally filter by any combination of fields
+	if campaignID != "" {
+		query += " AND campaign_id = ?"
+		args = append(args, campaignID)
+	}
+	if appBundle != "" {
+		query += " AND app_bundle = ?"
+		args = append(args, appBundle)
+	}
+	if placementID != "" {
+		query += " AND placement_id = ?"
+		args = append(args, placementID)
 	}
 
 	rows, err := q.conn.Query(ctx, query, args...)

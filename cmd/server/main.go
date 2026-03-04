@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -82,6 +84,7 @@ func main() {
 	}
 
 	// 8. Start background metrics aggregation thread
+	stopChan := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
@@ -108,6 +111,9 @@ func main() {
 				}
 
 				cancel()
+			case <-stopChan:
+				log.Println("Background metrics aggregation thread stopping")
+				return
 			}
 		}
 	}()
@@ -138,7 +144,23 @@ func main() {
 	})
 
 	log.Printf("Server starting on port %s", port)
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		log.Println("Shutting down server...")
+
+		// Stop background metrics aggregation thread
+		close(stopChan)
+		log.Println("Background metrics aggregation thread stopped")
+
+		// Give running operations time to complete
+		time.Sleep(2 * time.Second)
+	}()
+
+	if err := http.ListenAndServe(":"+port, r); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
