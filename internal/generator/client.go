@@ -13,10 +13,10 @@ import (
 
 // BidRequest represents a bid request payload (matches server API)
 type BidRequest struct {
-	UserIDFV    string  `json:"user_idfv"`
-	AppBundle   string  `json:"app_bundle"`
-	PlacementID string  `json:"placement_id"`
-	Timestamp   int64   `json:"timestamp"`
+	UserIDFV    string `json:"user_idfv"`
+	AppBundle   string `json:"app_bundle"`
+	PlacementID string `json:"placement_id"`
+	Timestamp   int64  `json:"timestamp"`
 	// Additional fields for campaign selection (optional)
 	Country string `json:"country,omitempty"`
 	OS      string `json:"os,omitempty"`
@@ -68,15 +68,44 @@ var invalidDeviceIDs = []string{
 	"unknown",
 }
 
-// App Bundles
+// App Bundles - realistic mobile app bundle IDs
 var appBundles = []string{
-	"com.example.app",
-	"com.game.mygame",
-	"com.social.app",
-	"com.news.reader",
-	"com.video.player",
-	"app_commerce_001",
-	"app_fitness_001",
+	// Social apps
+	"com.facebook.katana",
+	"com.instagram.android",
+	"com.twitter.android",
+	"com.snapchat.android",
+	"com.tiktok",
+	// Games
+	"com.supercell.clashofclans",
+	"com.king.candycrushsaga",
+	"com.rovio.angrybirds",
+	"com.gameloft.android.ANMP.GloftA8HM",
+	"com.mojang.minecraftpe",
+	// Shopping
+	"com.amazon.mShop.android.shopping",
+	"com.ebay.mobile",
+	"com.walmart.android",
+	"com.target",
+	// Entertainment
+	"com.netflix.mediaclient",
+	"com.google.android.youtube",
+	"com.spotify.music",
+	"com.disney.disneyplus",
+	// News & Reading
+	"com.flipboard.app",
+	"com.twitter.android",
+	"com.reddit.frontpage",
+	// Utilities
+	"com.whatsapp",
+	"com.viber.voip",
+	"com.linecorp.LINEarroid",
+	"com.skype.raider",
+	// Productivity
+	"com.microsoft.office.word",
+	"com.google.android.apps.docs",
+	"com.slack",
+	"com.zoom.us",
 }
 
 // Placement IDs
@@ -191,6 +220,11 @@ func (c *Client) CreateImpression(ctx context.Context, req ImpressionRequest) (*
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("impression request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Handle empty response body (server returns 200 OK with no body)
+	if len(body) == 0 {
+		return &ImpressionResponse{Status: "ok"}, nil
 	}
 
 	var impResp ImpressionResponse

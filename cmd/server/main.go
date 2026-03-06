@@ -28,8 +28,8 @@ func main() {
 	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
 	kafkaBrokers := getEnv("KAFKA_BROKERS", "localhost:9092")
 	chAddr := getEnv("CLICKHOUSE_ADDR", "localhost:9000")
-	port := getEnv("PORT", "8082")
-	baseURL := getEnv("BASE_URL", "http://localhost:8082")
+	port := getEnv("PORT", "8080")
+	baseURL := getEnv("BASE_URL", "http://localhost:8080")
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
