@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/go-redis/redis/v8"
 
 	"bidsrv/internal/api"
@@ -123,8 +124,13 @@ func main() {
 
 	// 10. Setup Router
 	r := chi.NewRouter()
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+	}))
 	r.Use(middleware.RequestID)
-	//r.Use(middleware.RealIP)
+	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
@@ -137,11 +143,11 @@ func main() {
 	r.Get("/dashboard/timeseries", dashboardHandler.HandleDashboardTimeSeries)
 
 	// Serve static files
-	r.Get("/dashboard.html", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "/home/1519995555/go/src/trial-homework/internal/web/dashboard.html")
-	})
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
+	})
+	r.Get("/dashboard.html", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "internal/web/dashboard.html")
 	})
 
 	log.Printf("Server starting on port %s", port)
