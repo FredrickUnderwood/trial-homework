@@ -135,12 +135,13 @@ func main() {
 	// Dashboard routes
 	r.Get("/dashboard", dashboardHandler.HandleDashboard)
 	r.Get("/dashboard/timeseries", dashboardHandler.HandleDashboardTimeSeries)
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
-	})
+
 	// Serve static files
 	r.Get("/dashboard.html", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "internal/web/dashboard.html")
+		http.ServeFile(w, r, "/home/1519995555/go/src/trial-homework/internal/web/dashboard.html")
+	})
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
 	})
 
 	log.Printf("Server starting on port %s", port)
