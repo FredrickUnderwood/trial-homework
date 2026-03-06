@@ -35,6 +35,9 @@ func main() {
 	absPath, _ := filepath.Abs("internal/web/dashboard.html")
 	log.Printf("Dashboard HTML relative path resolves to: %s", absPath)
 
+	// 保存 cwd 供后面使用
+	_ = cwd
+
 	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
 	kafkaBrokers := getEnv("KAFKA_BROKERS", "localhost:9092")
 	chAddr := getEnv("CLICKHOUSE_ADDR", "localhost:9000")
@@ -156,25 +159,33 @@ func main() {
 		log.Printf("[DEBUG] Root path accessed from: %s", r.RemoteAddr)
 		http.Redirect(w, r, "/dashboard_index", http.StatusFound)
 	})
-	r.Get("/dashboard_index", func(w http.ResponseWriter, r *http.Request) {
-		// 记录请求详情
-		cwd, _ := os.Getwd()
-		filePath := "internal/web/dashboard.html"
-		absPath, _ := filepath.Abs(filePath)
 
-		log.Printf("[DEBUG] /dashboard_index request from: %s", r.RemoteAddr)
-		log.Printf("[DEBUG] Current working directory: %s", cwd)
-		log.Printf("[DEBUG] Trying to serve file: %s", filePath)
-		log.Printf("[DEBUG] Absolute path: %s", absPath)
+	// 通用的静态文件处理 - 打印所有请求
+	r.MethodFunc("GET", "/*", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		log.Printf("[DEBUG] Caught path: %s from %s", path, r.RemoteAddr)
 
-		// 检查文件是否存在
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
-			log.Printf("[ERROR] File does NOT exist at: %s", absPath)
-			http.NotFound(w, r)
+		// 处理 dashboard 相关路径
+		if path == "/dashboard_index" || path == "/dashboard.html" || path == "/dashboard" {
+			filePath := "internal/web/dashboard.html"
+			absPath, _ := filepath.Abs(filePath)
+
+			log.Printf("[DEBUG] Current working directory: %s", cwd)
+			log.Printf("[DEBUG] Trying to serve file: %s", filePath)
+			log.Printf("[DEBUG] Absolute path: %s", absPath)
+
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				log.Printf("[ERROR] File does NOT exist at: %s", absPath)
+				http.NotFound(w, r)
+				return
+			}
+			log.Printf("[DEBUG] File exists, serving...")
+			http.ServeFile(w, r, filePath)
 			return
 		}
-		log.Printf("[DEBUG] File exists, serving...")
-		http.ServeFile(w, r, filePath)
+
+		log.Printf("[WARNING] Path not matched, returning 404: %s", path)
+		http.NotFound(w, r)
 	})
 
 	log.Printf("Server starting on port %s", port)
