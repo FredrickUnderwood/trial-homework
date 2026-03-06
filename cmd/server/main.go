@@ -144,9 +144,9 @@ func main() {
 
 	// Serve static files
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
+		http.Redirect(w, r, "/dashboard_index", http.StatusFound)
 	})
-	r.Get("/dashboard.html", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/dashboard_index", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "internal/web/dashboard.html")
 	})
 
