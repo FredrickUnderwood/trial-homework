@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,14 @@ import (
 )
 
 func main() {
+	// 记录启动时的关键信息
+	cwd, _ := os.Getwd()
+	log.Printf("=== Server Startup Info ===")
+	log.Printf("Current working directory: %s", cwd)
+	log.Printf("Executable path: %s", os.Args[0])
+	absPath, _ := filepath.Abs("internal/web/dashboard.html")
+	log.Printf("Dashboard HTML relative path resolves to: %s", absPath)
+
 	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
 	kafkaBrokers := getEnv("KAFKA_BROKERS", "localhost:9092")
 	chAddr := getEnv("CLICKHOUSE_ADDR", "localhost:9000")
@@ -144,10 +153,28 @@ func main() {
 
 	// Serve static files
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("[DEBUG] Root path accessed from: %s", r.RemoteAddr)
 		http.Redirect(w, r, "/dashboard_index", http.StatusFound)
 	})
 	r.Get("/dashboard_index", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "internal/web/dashboard.html")
+		// 记录请求详情
+		cwd, _ := os.Getwd()
+		filePath := "internal/web/dashboard.html"
+		absPath, _ := filepath.Abs(filePath)
+
+		log.Printf("[DEBUG] /dashboard_index request from: %s", r.RemoteAddr)
+		log.Printf("[DEBUG] Current working directory: %s", cwd)
+		log.Printf("[DEBUG] Trying to serve file: %s", filePath)
+		log.Printf("[DEBUG] Absolute path: %s", absPath)
+
+		// 检查文件是否存在
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			log.Printf("[ERROR] File does NOT exist at: %s", absPath)
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("[DEBUG] File exists, serving...")
+		http.ServeFile(w, r, filePath)
 	})
 
 	log.Printf("Server starting on port %s", port)
